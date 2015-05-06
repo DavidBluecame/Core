@@ -534,20 +534,22 @@ GatherInfo SPPM::traceGatherRay(yafaray::renderState_t &state, yafaray::diffRay_
         //(PM_IRE is only for the first pass, so not consume much time)
 		if(PM_IRE && !hp.radiusSetted) // "waste" two gather here as it has two maps now. This make the logic simple.
 		{
-			PFLOAT radius_1 = dsRadius * dsRadius;
-			PFLOAT radius_2 = radius_1;
+			//PFLOAT radius_1 = dsRadius * dsRadius;
+			PFLOAT diffRadius = dsRadius * dsRadius;
+			//PFLOAT radius_2 = radius_1;
+			PFLOAT caustRadius = diffRadius; // pov: that is an possible error, best caustic's need a more small radius.
 			int diffGathered = 0, caustGathered = 0;
 
             if(diffuseMap.nPhotons() > 0){
-				diffGathered = diffuseMap.gather(sp.P, gathered, nSearch, radius_1);
+				diffGathered = diffuseMap.gather(sp.P, gathered, nSearch, diffRadius); // radius_1);
             }
             if(causticMap.nPhotons() > 0){
-				caustGathered = causticMap.gather(sp.P, gathered, nSearch, radius_2);
+				caustGathered = causticMap.gather(sp.P, gathered, nSearch, caustRadius); // radius_2);
             }
 			if (diffGathered > 0 || caustGathered > 0) // it none photon gathered, we just skip.
 			{
                 // we choose the smaller one to be the initial radius.
-                hp.radius2 = std::min(radius_1, radius_2);
+				hp.radius2 = std::min(diffRadius, caustRadius); // radius_1, radius_2);
 				hp.radiusSetted = true;
 			}
 		}
@@ -569,7 +571,7 @@ GatherInfo SPPM::traceGatherRay(yafaray::renderState_t &state, yafaray::diffRay_
 				if(nGathered > _nMax)
 				{
 					_nMax = nGathered;
-					Y_INFO << "maximum Photons: "<<_nMax<<", radius2: "<<radius2<< yendl;
+					Y_INFO << "maximum Photons: "<< _nMax <<", radius2: "<< radius2 << yendl;
 					if(_nMax == 10){
 						for(int j=0; j < nGathered; ++j ) {
 								Y_INFO << "col:" << gathered[j].photon->color() << yendl;
