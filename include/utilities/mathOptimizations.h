@@ -228,7 +228,7 @@ inline float fSin(float x)
 
 	x = ((float)M_4_PI * x) - ((float)M_4_PI2 * x * std::fabs(x));
 	float result = CONST_P * (x * std::fabs(x) - x) + x;
-    //Make sure that the function is in the valid range [-1.0,+1.0]
+    //Make sure that the function is in the valid range [-1.0,1.0]
 	result = inRange(1.0, -1.0, result);
 	return result;
 #else
@@ -244,20 +244,34 @@ inline float fCos(float x)
 	return cos(x);
 #endif
 }
-
+/*
 inline float fAcos(float x)
 {
 	//checks if variable gets out of domain [-1.0,+1.0], so you get the range limit instead of NaN
-	if(x<=-1.0) return((float)M_PI);
-	else if(x>=1.0) return(0.0);
+	if(x <= -1.0) return((float)M_PI);
+	else if(x >= 1.0) return(0.0);
 	else return acos(x);
+}
+*/
+static float acosArray[629];
+inline float fAcos(float x)
+{
+	if (x<-1 || x>1)
+		return acos(x);
+	float x1 = x*100.0f + 100.0f;
+
+	int c = (int)(x1);
+	float r = x1 - c;
+
+	float res = acosArray[c] * (1 - r) + acosArray[c + 1] * r;
+	return res;
 }
 
 inline float fAsin(float x)
 {
 	//checks if variable gets out of domain [-1.0,+1.0], so you get the range limit instead of NaN
-	if(x<=-1.0) return((float)-M_PI_2);
-	else if(x>=1.0) return((float)M_PI_2);
+	if(x <= -1.0) return((float)-M_PI_2);
+	else if(x >= 1.0) return((float)M_PI_2);
 	else return asin(x);
 }
 
