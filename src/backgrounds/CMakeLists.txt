@@ -1,4 +1,4 @@
-include_directories(${YAF_INCLUDE_DIRS})
+include_directories(${YAF_INCLUDE_DIRS} ${MINGW_STD_THREADS_INCLUDE_DIR})
 
 add_definitions(-DBUILDING_YAFRAYPLUGIN)
 
