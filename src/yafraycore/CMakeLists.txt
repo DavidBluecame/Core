@@ -1,4 +1,4 @@
-include_directories(${YAF_INCLUDE_DIRS} ${LIBXML2_INCLUDE_DIR} ${OPENEXR_INCLUDE_DIRS}
+include_directories(${YAF_INCLUDE_DIRS} ${MINGWTHREADS_INCLUDE_DIR} ${LIBXML2_INCLUDE_DIR} ${OPENEXR_INCLUDE_DIRS}
                     ${FREETYPE_INCLUDE_DIRS})
 set(YF_CORE_SOURCES bound.cc yafsystem.cc environment.cc console.cc color_console.cc color_ramp.cc
 					sysinfo.cc logging.cc session.cc faure_tables.cc std_primitives.cc color.cc renderpasses.cc
