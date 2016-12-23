@@ -42,11 +42,11 @@ class hdrHandler_t: public imageHandler_t
 public:
 	hdrHandler_t();
 	~hdrHandler_t();
-	void initForOutput(int width, int height, const renderPasses_t *renderPasses, bool denoiseEnabled, int denoiseHLum, int denoiseHCol, float denoiseMix, bool withAlpha = false, bool multi_layer = false);
+	void initForOutput(int width, int height, const renderPasses_t *renderPasses, bool denoiseEnabled, int denoiseHLum, int denoiseHCol, float denoiseMix, bool withAlpha = false, bool multi_layer = false, bool grayscale = false);
 	bool loadFromFile(const std::string &name);
-	bool saveToFile(const std::string &name, int imagePassNumber = 0);
-	void putPixel(int x, int y, const colorA_t &rgba, int imagePassNumber = 0);
-	colorA_t getPixel(int x, int y, int imagePassNumber = 0);
+	bool saveToFile(const std::string &name, int imgIndex = 0);
+	void putPixel(int x, int y, const colorA_t &rgba, int imgIndex = 0);
+	colorA_t getPixel(int x, int y, int imgIndex = 0);
 	static imageHandler_t *factory(paraMap_t &params, renderEnvironment_t &render);
 	bool isHDR() { return true; }
 
@@ -62,8 +62,6 @@ private:
 
 hdrHandler_t::hdrHandler_t()
 {
-	m_width = 0;
-	m_height = 0;
 	m_hasAlpha = false;
 	m_MultiLayer = false;
 
@@ -72,29 +70,30 @@ hdrHandler_t::hdrHandler_t()
 
 hdrHandler_t::~hdrHandler_t()
 {
-	for(size_t idx = 0; idx < imagePasses.size(); ++idx)
+	for(size_t idx = 0; idx < imgBuffer.size(); ++idx)
 	{
-		if(imagePasses.at(idx)) delete imagePasses.at(idx);
-		imagePasses.at(idx) = nullptr;
+		delete imgBuffer.at(idx);
+		imgBuffer.at(idx) = nullptr;
 	}
 }
 
-void hdrHandler_t::initForOutput(int width, int height, const renderPasses_t *renderPasses, bool denoiseEnabled, int denoiseHLum, int denoiseHCol, float denoiseMix, bool withAlpha, bool multi_layer)
+void hdrHandler_t::initForOutput(int width, int height, const renderPasses_t *renderPasses, bool denoiseEnabled, int denoiseHLum, int denoiseHCol, float denoiseMix, bool withAlpha, bool multi_layer, bool grayscale)
 {
-	m_width = width;
-	m_height = height;
 	m_hasAlpha = withAlpha;
     m_MultiLayer = multi_layer;
 	m_Denoise = denoiseEnabled;
 	m_DenoiseHLum = denoiseHLum;
 	m_DenoiseHCol = denoiseHCol;
 	m_DenoiseMix = denoiseMix;
+	m_grayscale = grayscale;
 
-	imagePasses.resize(renderPasses->extPassesSize());
-	
-	for(size_t idx = 0; idx < imagePasses.size(); ++idx)
+	int nChannels = 3;
+	if(m_grayscale) nChannels = 1;
+	else if(m_hasAlpha) nChannels = 4;
+
+	for(int idx = 0; idx < renderPasses->extPassesSize(); ++idx)
 	{
-		imagePasses.at(idx) = new rgba2DImage_nw_t(m_width, m_height);
+		imgBuffer.push_back(new imageBuffer_t(width, height, nChannels, TEX_OPTIMIZATION_NONE));
 	}
 }
 
@@ -118,18 +117,22 @@ bool hdrHandler_t::loadFromFile(const std::string &name)
 	}
 
 	// discard old image data
-	if(!imagePasses.empty())
+	if(!imgBuffer.empty())
 	{
-		for(size_t idx = 0; idx < imagePasses.size(); ++idx)
+		for(size_t idx = 0; idx < imgBuffer.size(); ++idx)
 		{
-			if(imagePasses.at(idx)) delete imagePasses.at(idx);
+			delete imgBuffer.at(idx);
+			imgBuffer.at(idx) = nullptr;
 		}
-		imagePasses.clear();
+		imgBuffer.clear();
 	}
-	
-	imagePasses.push_back(new rgba2DImage_nw_t(m_width, m_height));
 
-	m_hasAlpha = false;
+	m_hasAlpha = false;	//FIXME: why is alpha false in HDR??
+	int nChannels = 4;	//FIXME: despite alpha being false, number of channels was 4 anyway. I'm keeping this just in case, but I think it should be 3??
+	if(m_grayscale) nChannels = 1;
+	else if(m_hasAlpha) nChannels = 4;
+
+	imgBuffer.push_back(new imageBuffer_t(m_width, m_height, nChannels, getTextureOptimization()));
 
 	int scanWidth = (header.yFirst) ? m_width : m_height;
 	
@@ -350,8 +353,8 @@ bool hdrHandler_t::readORLE(FILE *fp, int y, int scanWidth)
 	// put the pixels on the main buffer
 	for(int x = header.min[1]; x != header.max[1]; x += header.max[1])
 	{
-		if(header.yFirst) (*imagePasses.at(0))(x, y) = scanline[j].getRGBA();
-		else (*imagePasses.at(0))(y, x) = scanline[j].getRGBA();
+		if(header.yFirst) imgBuffer.at(0)->setColor(x, y, scanline[j].getRGBA());
+		else imgBuffer.at(0)->setColor(y, x, scanline[j].getRGBA());
 		j++;
 	}
 
@@ -431,8 +434,8 @@ bool hdrHandler_t::readARLE(FILE *fp, int y, int scanWidth)
 	// put the pixels on the main buffer
 	for(int x = header.min[1]; x != header.max[1]; x += header.step[1])
 	{
-		if(header.yFirst) (*imagePasses.at(0))(x, y) = scanline[j].getRGBA();
-		else (*imagePasses.at(0))(y, x) = scanline[j].getRGBA();
+		if(header.yFirst) imgBuffer.at(0)->setColor(x, y, scanline[j].getRGBA());
+		else imgBuffer.at(0)->setColor(y, x, scanline[j].getRGBA());
 		j++;
 	}
 
@@ -442,8 +445,11 @@ bool hdrHandler_t::readARLE(FILE *fp, int y, int scanWidth)
 	return true;
 }
 
-bool hdrHandler_t::saveToFile(const std::string &name, int imagePassNumber)
+bool hdrHandler_t::saveToFile(const std::string &name, int imgIndex)
 {
+	int h = imgBuffer.at(imgIndex)->getHeight();
+	int w = imgBuffer.at(imgIndex)->getWidth();
+
 	std::ofstream file(name.c_str(), std::ios::out | std::ios::binary);
 
 	if (!file.is_open())
@@ -461,20 +467,20 @@ bool hdrHandler_t::saveToFile(const std::string &name, int imagePassNumber)
 		writeHeader(file);
 
 		rgbePixel_t signature; //scanline start signature for adaptative RLE
-		signature.setScanlineStart(m_width); //setup the signature
+		signature.setScanlineStart(w); //setup the signature
 
-		rgbePixel_t *scanline = new rgbePixel_t[m_width];
+		rgbePixel_t *scanline = new rgbePixel_t[w];
 
 		// write using adaptive-rle encoding
-		for (int y = 0; y < m_height; y++)
+		for (int y = 0; y < h; y++)
 		{
 			// write scanline start signature
 			file.write((char *)&signature, sizeof(rgbePixel_t));
 
 			// fill the scanline buffer
-			for (int x = 0; x < m_width; x++)
+			for (int x = 0; x < w; x++)
 			{
-				scanline[x] = getPixel(x, y, imagePassNumber);
+				scanline[x] = getPixel(x, y, imgIndex);
 			}
 
 			// write the scanline RLE compressed by channel in 4 separated blocks not as contigous pixels pixel blocks
@@ -577,14 +583,14 @@ bool hdrHandler_t::writeScanline(std::ofstream &file, rgbePixel_t *scanline)
 	return true;
 }
 
-void hdrHandler_t::putPixel(int x, int y, const colorA_t &rgba, int imagePassNumber)
+void hdrHandler_t::putPixel(int x, int y, const colorA_t &rgba, int imgIndex)
 {
-	(*imagePasses.at(imagePassNumber))(x, y) = rgba;
+	imgBuffer.at(imgIndex)->setColor(x, y, rgba);
 }
 
-colorA_t hdrHandler_t::getPixel(int x, int y, int imagePassNumber)
+colorA_t hdrHandler_t::getPixel(int x, int y, int imgIndex)
 {
-	return (*imagePasses.at(imagePassNumber))(x, y);
+	return imgBuffer.at(imgIndex)->getColor(x, y);
 }
 
 imageHandler_t *hdrHandler_t::factory(paraMap_t &params,renderEnvironment_t &render)
@@ -593,6 +599,7 @@ imageHandler_t *hdrHandler_t::factory(paraMap_t &params,renderEnvironment_t &ren
 	int height = 0;
 	bool withAlpha = false;
 	bool forOutput = true;
+	bool img_grayscale = false;
 	bool denoiseEnabled = false;
 	int denoiseHLum = 3;
 	int denoiseHCol = 3;
@@ -602,6 +609,7 @@ imageHandler_t *hdrHandler_t::factory(paraMap_t &params,renderEnvironment_t &ren
 	params.getParam("height", height);
 	params.getParam("alpha_channel", withAlpha);
 	params.getParam("for_output", forOutput);
+	params.getParam("img_grayscale", img_grayscale);
 /*	//Denoise is not available for HDR/EXR images
  * 	params.getParam("denoiseEnabled", denoiseEnabled);
  *	params.getParam("denoiseHLum", denoiseHLum);
@@ -610,10 +618,12 @@ imageHandler_t *hdrHandler_t::factory(paraMap_t &params,renderEnvironment_t &ren
  */
 	imageHandler_t *ih = new hdrHandler_t();
 
+	ih->setTextureOptimization(TEX_OPTIMIZATION_NONE);
+
 	if(forOutput)
 	{
 		if(yafLog.getUseParamsBadge()) height += yafLog.getBadgeHeight();
-		ih->initForOutput(width, height, render.getRenderPasses(), denoiseEnabled, denoiseHLum, denoiseHCol, denoiseMix, withAlpha, false);
+		ih->initForOutput(width, height, render.getRenderPasses(), denoiseEnabled, denoiseHLum, denoiseHCol, denoiseMix, withAlpha, false, img_grayscale);
 	}
 
 	return ih;

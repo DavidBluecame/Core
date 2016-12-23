@@ -22,6 +22,7 @@
 #include <core_api/scene.h>
 #include <core_api/object3d.h>
 #include <core_api/camera.h>
+#include <core_api/material.h>
 #include <core_api/light.h>
 #include <core_api/background.h>
 #include <core_api/integrator.h>
@@ -934,7 +935,7 @@ bool scene_t::update()
 	return true;
 }
 
-bool scene_t::intersect(const ray_t &ray, surfacePoint_t &sp) const
+bool scene_t::intersect(const diffRay_t &ray, surfacePoint_t &sp) const
 {
 	float dis, Z;
 	intersectData_t data;
@@ -950,6 +951,7 @@ bool scene_t::intersect(const ray_t &ray, surfacePoint_t &sp) const
 		hitt->getSurface(sp, h, data);
 		sp.origin = hitt;
 		sp.data = data;
+		sp.ray = &ray;
 	}
 	else
 	{
@@ -960,6 +962,7 @@ bool scene_t::intersect(const ray_t &ray, surfacePoint_t &sp) const
 		hitprim->getSurface(sp, h, data);
 		sp.origin = hitprim;
 		sp.data = data;
+		sp.ray = &ray;
 	}
 	ray.tmax = Z;
 	return true;

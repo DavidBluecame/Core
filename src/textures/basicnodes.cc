@@ -3,6 +3,7 @@
 #include <textures/layernode.h>
 #include <core_api/object3d.h>
 #include <core_api/camera.h>
+#include <iomanip>
 
 __BEGIN_YAFRAY
 
@@ -147,8 +148,10 @@ void textureMapper_t::getCoords(point3d_t &texpt, vector3d_t &Ng, const surfaceP
 		case TXC_TAN:	// Not implemented yet use GLOB
 		case TXC_REFL:	// Not implemented yet use GLOB
 		case TXC_GLOB:	// GLOB mapped as default
-		default:		texpt = sp.P; Ng = sp.Ng; break;
+		default:		texpt = sp.P; Ng = sp.Ng;
+		break;
 	}
+//Y_WARNING << "tex_coords="<<tex_coords<<", sp.P="<<sp.P<<", texpt="<<texpt<<yendl; 
 }
 
 void textureMapper_t::eval(nodeStack_t &stack, const renderState_t &state, const surfacePoint_t &sp)const
@@ -156,11 +159,47 @@ void textureMapper_t::eval(nodeStack_t &stack, const renderState_t &state, const
 	point3d_t texpt(0.f);
 	vector3d_t Ng(0.f);
 
-	getCoords(texpt, Ng, sp, state);
+	if(tex->getInterpolationType() == INTP_MIPMAP_TRILINEAR && sp.ray && sp.ray->hasDifferentials)
+	{
+		spDifferentials_t spDiff(sp, *(sp.ray));
 
-	texpt = doMapping(texpt, Ng);
+		float dSdx = 0.f, dTdx = 0.f;
+		float dSdy = 0.f, dTdy = 0.f;
 
-	stack[this->ID] = nodeResult_t(tex->getColor(texpt), (doScalar) ? tex->getFloat(texpt) : 0.f );
+		getCoords(texpt, Ng, sp, state);
+
+		point3d_t texptorig=texpt;
+		
+		texpt = doMapping(texptorig, Ng);
+
+		if(tex_coords == TXC_UV && sp.hasUV)
+		{
+			float dUdx = 0.f, dVdx = 0.f;
+			float dUdy = 0.f, dVdy = 0.f;
+			spDiff.getUVdifferentials(dUdx, dVdx, dUdy, dVdy);
+			
+			point3d_t texpt_diffx = 1.0e+2f * (doMapping(texptorig + 1.0e-2f * point3d_t(dUdx, dVdx, 0.f), Ng) - texpt);
+			point3d_t texpt_diffy = 1.0e+2f * (doMapping(texptorig + 1.0e-2f * point3d_t(dUdy, dVdy, 0.f), Ng) - texpt);
+			
+			dSdx = texpt_diffx.x;
+			dTdx = texpt_diffx.y;
+			
+			dSdy = texpt_diffy.x;
+			dTdy = texpt_diffy.y;
+		}
+		else
+		{
+		}
+
+		stack[this->ID] = nodeResult_t(tex->getColor(texpt, dSdx, dTdx, dSdy, dTdy), (doScalar) ? tex->getFloat(texpt, dSdx, dTdx, dSdy, dTdy) : 0.f );
+	}
+	else
+	{
+		getCoords(texpt, Ng, sp, state);
+		texpt = doMapping(texpt, Ng);
+		
+		stack[this->ID] = nodeResult_t(tex->getColor(texpt), (doScalar) ? tex->getFloat(texpt) : 0.f );
+	}
 }
 
 // Basically you shouldn't call this anyway, but for the sake of consistency, redirect:

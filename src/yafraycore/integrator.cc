@@ -180,7 +180,7 @@ bool tiledIntegrator_t::render(int numView, imageFilm_t *image)
 	maxDepth = 0.f;
 	minDepth = 1e38f;
 
-	diffRaysEnabled = false;	//always false for now, reserved for future motion blur and interference features
+	diffRaysEnabled = true;	//enable ray differentials for mipmap calculation
 
 	if(scene->pass_enabled(PASS_INT_Z_DEPTH_NORM) || scene->pass_enabled(PASS_INT_MIST)) precalcDepths();
 
@@ -516,7 +516,7 @@ bool tiledIntegrator_t::renderTile(int numView, renderArea_t &a, int n_samples, 
 #ifndef __clang__
 inline
 #endif
-void tiledIntegrator_t::generateCommonRenderPasses(colorPasses_t &colorPasses, renderState_t &state, const surfacePoint_t &sp) const
+void tiledIntegrator_t::generateCommonRenderPasses(colorPasses_t &colorPasses, renderState_t &state, const surfacePoint_t &sp, const diffRay_t &ray) const
 {
 	colorPasses.probe_set(PASS_INT_UV, colorA_t(sp.U, sp.V, 0.f, 1.f));
 	colorPasses.probe_set(PASS_INT_NORMAL_SMOOTH, colorA_t((sp.N.x + 1.f) * .5f, (sp.N.y + 1.f) * .5f, (sp.N.z + 1.f) * .5f, 1.f));
@@ -585,9 +585,13 @@ void tiledIntegrator_t::generateCommonRenderPasses(colorPasses_t &colorPasses, r
         colorPasses(PASS_INT_DEBUG_WIREFRAME) = wireframe_color;
 	}
 
+
+	spDifferentials_t spDiff(sp, ray);
+
 	if(colorPasses.enabled(PASS_INT_DEBUG_SAMPLING_FACTOR))
 	{
-        colorPasses(PASS_INT_DEBUG_SAMPLING_FACTOR) = colorA_t(sp.material->getSamplingFactor());
+        //FIXME DAVID: colorPasses(PASS_INT_DEBUG_SAMPLING_FACTOR) = colorA_t(sp.material->getSamplingFactor());
+        colorPasses(PASS_INT_DEBUG_SAMPLING_FACTOR) = colorA_t(spDiff.dPdx.length(), spDiff.dPdy.length(), 0.f);
 	}
 }
 

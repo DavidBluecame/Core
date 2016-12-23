@@ -21,15 +21,17 @@
 
 #include <cstring>
 #include <cctype>
+#include <sstream>
+#include <iomanip>
 #include <textures/imagetex.h>
 #include <utilities/stringUtils.h>
 
 __BEGIN_YAFRAY
 
-textureImage_t::textureImage_t(imageHandler_t *ih, interpolationType intp, float gamma, colorSpaces_t color_space):
-				image(ih), intp_type(intp), colorSpace(color_space), gamma(gamma), mirrorX(false), mirrorY(false)
+textureImage_t::textureImage_t(imageHandler_t *ih, int intp, float gamma, colorSpaces_t color_space):
+				image(ih), colorSpace(color_space), gamma(gamma), mirrorX(false), mirrorY(false)
 {
-	// Empty
+	intp_type = intp;
 }
 
 textureImage_t::~textureImage_t()
@@ -51,8 +53,121 @@ void textureImage_t::resolution(int &x, int &y, int &z) const
 	z=0;
 }
 
-colorA_t textureImage_t::interpolateImage(const point3d_t &p, bool from_postprocessed) const
+colorA_t textureImage_t::interpolateImage(const point3d_t &p, float dSdx, float dTdx, float dSdy, float dTdy, bool from_postprocessed) const
 {
+	if (intp_type == INTP_MIPMAP_TRILINEAR)
+	{
+		float dS = std::max(fabsf(dSdx), fabsf(dSdy)) * image->getWidth();
+		float dT = std::max(fabsf(dTdx), fabsf(dTdy)) * image->getHeight();
+		
+		float mipmaplevel = 0.5f * log2(dS*dS + dT*dT) - 1.f;
+		
+		mipmaplevel = std::min(std::max(0.f, mipmaplevel), (float) image->getHighestImgIndex());
+		
+		int mipmaplevelA = (int) floor(mipmaplevel);
+		int mipmaplevelB = (int) ceil(mipmaplevel);
+
+		int xA, yA, xA2, yA2;
+		
+		int resxA=image->getWidth(mipmaplevelA);
+		int resyA=image->getHeight(mipmaplevelA);
+		
+		float xfA = ((float)resxA * (p.x - floor(p.x)));
+		float yfA = ((float)resyA * (p.y - floor(p.y)));
+		
+		xfA += 0.5f;
+		yfA += 0.5f;
+
+		//FIXME DAVID: parameter for seamless textures???
+		
+		if(resxA >= 2)
+		{
+			xA = ((int)xfA)-1;
+			if(xA < 0 || xA >= resxA) xA = xA - resxA * (int) floor((float)xA / (float)resxA); 
+		}
+		else xA = 0;
+		
+		if(resyA >= 2)
+		{
+			yA = ((int)yfA)-1 % resyA;
+			if(yA < 0 || yA >= resxA) yA = yA - resyA * (int) floor((float)yA / (float)resyA); 
+		}
+		else yA = 0;
+		
+		xA2 = (xA+1) % resxA;
+		yA2 = (yA+1) % resyA;
+	
+		colorA_t c1A = image->getPixel(xA, yA, mipmaplevelA);
+		colorA_t c2A = image->getPixel(xA2, yA, mipmaplevelA);
+		colorA_t c3A = image->getPixel(xA, yA2, mipmaplevelA);
+		colorA_t c4A = image->getPixel(xA2, yA2, mipmaplevelA);
+
+		float dxA = fabs(xfA - (int)(xfA));
+		float dyA = fabs(yfA - (int)(yfA));
+	
+		float w0A = (1-dxA) * (1-dyA);
+		float w1A = (1-dxA) * dyA;
+		float w2A = dxA * (1-dyA);
+		float w3A = dxA * dyA;
+		
+		//Y_DEBUG << std::setprecision(3)<< "resxA="<<resxA<<", resyA="<<resyA<<", xA="<<xA<<", yA="<<yA<<", xA2="<<xA2<<", yA2="<<yA2<<", dxA="<<dxA<<", dyA="<<dyA<<yendl;
+		
+		colorA_t color_ret = (w0A * c1A) + (w1A * c3A) + (w2A * c2A) + (w3A * c4A);
+		
+		if(mipmaplevelA == mipmaplevelB) return color_ret;
+		
+		int xB, yB, xB2, yB2;
+		
+		int resxB=image->getWidth(mipmaplevelB);
+		int resyB=image->getHeight(mipmaplevelB);
+		
+		float xfB = ((float)resxB * (p.x - floor(p.x)));
+		float yfB = ((float)resyB * (p.y - floor(p.y)));
+		
+		xfB += 0.5f;
+		yfB += 0.5f;
+
+		//FIXME DBVID: parameter for seamless textures???
+		
+		if(resxB >= 2)
+		{
+			xB = ((int)xfB)-1;
+			if(xB < 0 || xB >= resxB) xB = xB - resxB * (int) floor((float)xB / (float)resxB); 
+		}
+		else xB = 0;
+		
+		if(resyB >= 2)
+		{
+			yB = ((int)yfB)-1 % resyB;
+			if(yB < 0 || yB >= resxB) yB = yB - resyB * (int) floor((float)yB / (float)resyB); 
+		}
+		else yB = 0;
+		
+		xB2 = (xB+1) % resxB;
+		yB2 = (yB+1) % resyB;
+	
+		colorA_t c1B = image->getPixel(xB, yB, mipmaplevelB);
+		colorA_t c2B = image->getPixel(xB2, yB, mipmaplevelB);
+		colorA_t c3B = image->getPixel(xB, yB2, mipmaplevelB);
+		colorA_t c4B = image->getPixel(xB2, yB2, mipmaplevelB);
+
+		float dxB = fabs(xfB - (int)(xfB));
+		float dyB = fabs(yfB - (int)(yfB));
+	
+		float w0B = (1-dxB) * (1-dyB);
+		float w1B = (1-dxB) * dyB;
+		float w2B = dxB * (1-dyB);
+		float w3B = dxB * dyB;
+		
+		colorA_t cB = (w0B * c1B) + (w1B * c3B) + (w2B * c2B) + (w3B * c4B);
+		
+		float mipmaplevelDelta = mipmaplevel - (float) mipmaplevelA;
+		
+		color_ret.blend(cB, mipmaplevelDelta);
+		
+		return color_ret;
+	}
+
 	int x, y, x0, x2, x3, y0, y2, y3;
 	
 	int resx=image->getWidth();
@@ -259,15 +374,15 @@ colorA_t textureImage_t::interpolateImage(const point3d_t &p, bool from_postproc
 	return c0;
 }
 
-colorA_t textureImage_t::getColor(const point3d_t &p, bool from_postprocessed) const
+colorA_t textureImage_t::getColor(const point3d_t &p, float dSdx, float dTdx, float dSdy, float dTdy, bool from_postprocessed) const
 {
-	colorA_t ret = getRawColor(p, from_postprocessed);
+	colorA_t ret = getRawColor(p, dSdx, dTdx, dSdy, dTdy, from_postprocessed);
 	ret.linearRGB_from_ColorSpace(colorSpace, gamma);
 	
 	return applyAdjustments(ret);
 }
 
-colorA_t textureImage_t::getRawColor(const point3d_t &p, bool from_postprocessed) const
+colorA_t textureImage_t::getRawColor(const point3d_t &p, float dSdx, float dTdx, float dSdy, float dTdy, bool from_postprocessed) const
 {
 	point3d_t p1 = point3d_t(p.x, -p.y, p.z);
 	colorA_t ret(0.f);
@@ -276,21 +391,22 @@ colorA_t textureImage_t::getRawColor(const point3d_t &p, bool from_postprocessed
 
 	if(outside) return ret;
 	
-	ret = interpolateImage(p1, from_postprocessed);
+	ret = interpolateImage(p1, dSdx, dTdx, dSdy, dTdy, from_postprocessed);
 	
 	return ret;
 }
 
-colorA_t textureImage_t::getColor(int x, int y, int z, bool from_postprocessed) const
+colorA_t textureImage_t::getColor(int x, int y, int z, float dSdx, float dTdx, float dSdy, float dTdy, bool from_postprocessed) const
 {
-	colorA_t ret = getRawColor(x, y, z, from_postprocessed);
+	colorA_t ret = getRawColor(x, y, z, dSdx, dTdx, dSdy, dTdy, from_postprocessed);
 	ret.linearRGB_from_ColorSpace(colorSpace, gamma);
 	
 	return applyAdjustments(ret);
 }
 
-colorA_t textureImage_t::getRawColor(int x, int y, int z, bool from_postprocessed) const
+colorA_t textureImage_t::getRawColor(int x, int y, int z, float dSdx, float dTdx, float dSdy, float dTdy, bool from_postprocessed) const
 {
+	return color_t(x, y, z);
 	int resx=image->getWidth();
 	int resy=image->getHeight();
 
@@ -302,7 +418,7 @@ colorA_t textureImage_t::getRawColor(int x, int y, int z, bool from_postprocesse
 	colorA_t c1(0.f);
 	
 	if(from_postprocessed && postProcessedImage) return (*postProcessedImage)(x, y);
-	else return image->getPixel(x, y);
+	else return image->getPixel(x, y, 0.f); //FIXME DAVID!!
 }
 
 bool textureImage_t::doMapping(point3d_t &texpt) const
@@ -472,6 +588,7 @@ texture_t *textureImage_t::factory(paraMap_t &params, renderEnvironment_t &rende
 	colorSpaces_t color_space = RAW_MANUAL_GAMMA;
 	std::string texture_optimization_string = "none";
 	textureOptimization_t texture_optimization = TEX_OPTIMIZATION_NONE;
+	bool img_grayscale = false;
 	textureImage_t *tex = nullptr;
 	imageHandler_t *ih = nullptr;
 	params.getParam("interpolate", intpstr);
@@ -481,6 +598,7 @@ texture_t *textureImage_t::factory(paraMap_t &params, renderEnvironment_t &rende
 	params.getParam("normalmap", normalmap);
 	params.getParam("filename", name);
 	params.getParam("texture_optimization", texture_optimization_string);
+	params.getParam("img_grayscale", img_grayscale);
 	
 	if(!name)
 	{
@@ -489,12 +607,13 @@ texture_t *textureImage_t::factory(paraMap_t &params, renderEnvironment_t &rende
 	}
 	
 	// interpolation type, bilinear default
-	interpolationType intp = INTP_BILINEAR;
+	int intp = INTP_BILINEAR;
 	
 	if(intpstr)
 	{
 		if (*intpstr == "none") intp = INTP_NONE;
 		else if (*intpstr == "bicubic") intp = INTP_BICUBIC;
+		else if (*intpstr == "mipmap_trilinear") intp = INTP_MIPMAP_TRILINEAR;
 	}
 	
 	size_t lDot = name->rfind(".") + 1;
@@ -546,12 +665,26 @@ texture_t *textureImage_t::factory(paraMap_t &params, renderEnvironment_t &rende
 		else texture_optimization = TEX_OPTIMIZATION_NONE;
 	}
 	
+	ih->setColorSpace(color_space, gamma);
 	ih->setTextureOptimization(texture_optimization);
+	ih->setGrayScaleSetting(img_grayscale);
 
 	if(!ih->loadFromFile(*name))
 	{
 		Y_ERROR << "ImageTexture: Couldn't load image file, dropping texture." << yendl;
 		return nullptr;
+	}
+
+	if(intp == INTP_MIPMAP_TRILINEAR)
+	{
+		ih->generateMipMaps();
+		//FIXME DAVID: TEST SAVING MIPMAPS
+/*		for(int i=0; i<=ih->getHighestImgIndex(); ++i)
+		{
+			std::stringstream ss;
+			ss << "//tmp//pepe" << i << ".png";
+			ih->saveToFile(ss.str(), i);
+		}*/
 	}
 	
 	tex = new textureImage_t(ih, intp, gamma, color_space);
@@ -574,6 +707,7 @@ texture_t *textureImage_t::factory(paraMap_t &params, renderEnvironment_t &rende
 	bool mirror_y = false;
 	float intensity = 1.f, contrast = 1.f, saturation = 1.f, hue = 0.f, factor_red = 1.f, factor_green = 1.f, factor_blue = 1.f;
 	bool clamp = false;
+	float mipmapleveltest = 0.f;	//FIXME DAVID, JUST FOR TESTS
 	
 	params.getParam("xrepeat", xrep);
 	params.getParam("yrepeat", yrep);
@@ -599,7 +733,7 @@ texture_t *textureImage_t::factory(paraMap_t &params, renderEnvironment_t &rende
 	params.getParam("adj_saturation", saturation);
 	params.getParam("adj_hue", hue);
 	params.getParam("adj_clamp", clamp);
-	
+		
 	tex->xrepeat = xrep;
 	tex->yrepeat = yrep;
 	tex->rot90 = rot90;
@@ -615,6 +749,8 @@ texture_t *textureImage_t::factory(paraMap_t &params, renderEnvironment_t &rende
 	tex->mirrorY = mirror_y;
 	
 	tex->setAdjustments(intensity, contrast, saturation, hue, clamp, factor_red, factor_green, factor_blue);
+	
+	tex->mipmapleveltest = mipmapleveltest;//FIXME DAVID, JUST FOR TESTS
 	
 	return tex;
 }

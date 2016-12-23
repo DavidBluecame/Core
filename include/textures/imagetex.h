@@ -40,25 +40,18 @@ enum TEX_CLIPMODE
 	TCL_CHECKER
 };
 
-enum interpolationType
-{
-	INTP_NONE,
-	INTP_BILINEAR,
-	INTP_BICUBIC
-};
-
 class textureImage_t : public texture_t
 {
 	public:
-		textureImage_t(imageHandler_t *ih, interpolationType intp, float gamma, colorSpaces_t color_space = RAW_MANUAL_GAMMA);
+		textureImage_t(imageHandler_t *ih, int intp, float gamma, colorSpaces_t color_space = RAW_MANUAL_GAMMA);
 		virtual ~textureImage_t();
 		virtual bool discrete() const { return true; }
 		virtual bool isThreeD() const { return false; }
 		virtual bool isNormalmap() const { return normalmap; }
-		virtual colorA_t getColor(const point3d_t &sp, bool from_postprocessed=false) const;
-		virtual colorA_t getColor(int x, int y, int z, bool from_postprocessed=false) const;
-		virtual colorA_t getRawColor(const point3d_t &p, bool from_postprocessed=false) const;
-		virtual colorA_t getRawColor(int x, int y, int z, bool from_postprocessed=false) const;
+		virtual colorA_t getColor(const point3d_t &sp, float dSdx = 0.f, float dTdx = 0.f, float dSdy = 0.f, float dTdy = 0.f, bool from_postprocessed=false) const;
+		virtual colorA_t getColor(int x, int y, int z, float dSdx = 0.f, float dTdx = 0.f, float dSdy = 0.f, float dTdy = 0.f, bool from_postprocessed=false) const;
+		virtual colorA_t getRawColor(const point3d_t &p, float dSdx = 0.f, float dTdx = 0.f, float dSdy = 0.f, float dTdy = 0.f, bool from_postprocessed=false) const;
+		virtual colorA_t getRawColor(int x, int y, int z, float dSdx = 0.f, float dTdx = 0.f, float dSdy = 0.f, float dTdy = 0.f, bool from_postprocessed=false) const;
 		virtual void resolution(int &x, int &y, int &z) const;
 		virtual void postProcessedCreate();
 		virtual void postProcessedBlur(float blur_factor);
@@ -67,21 +60,22 @@ class textureImage_t : public texture_t
 	protected:
 		void setCrop(float minx, float miny, float maxx, float maxy);
 		bool doMapping(point3d_t &texp) const;
-		colorA_t interpolateImage(const point3d_t &p, bool from_postprocessed=false) const;
+		colorA_t interpolateImage(const point3d_t &p, float dSdx = 0.f, float dTdx = 0.f, float dSdy = 0.f, float dTdy = 0.f, bool from_postprocessed=false) const;
 		
 		bool use_alpha, calc_alpha, normalmap;
+		bool grayscale = false;	//!< Converts the information loaded from the texture RGB to grayscale to reduce memory usage for bump or mask textures, for example. Alpha is ignored in this case.
 		bool cropx, cropy, checker_odd, checker_even, rot90;
 		float cropminx, cropmaxx, cropminy, cropmaxy;
 		float checker_dist;
 		int xrepeat, yrepeat;
 		int tex_clipmode;
 		imageHandler_t *image;
-		interpolationType intp_type;
 		colorSpaces_t colorSpace;
 		float gamma;
 		bool mirrorX;
 		bool mirrorY;
 		rgba2DImage_nw_t * postProcessedImage = nullptr; //!< rgba color buffer for post-processed image (not linear, still in the original image color space)
+		float mipmapleveltest = 0.f;	//FIXME DAVID, JUST FOR TESTS
 };
 
 /*static inline colorA_t cubicInterpolate(const colorA_t &c1, const colorA_t &c2,

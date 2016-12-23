@@ -79,6 +79,41 @@ float spDifferentials_t::projectedPixelArea()
 	return (dPdx ^ dPdy).length();
 }
 
+void spDifferentials_t::dU_dV_from_dP_dPdU_dPdV(float &dU, float &dV, const point3d_t &dP, const vector3d_t &dPdU, const vector3d_t &dPdV) const
+{
+	float detXY = (dPdU.x*dPdV.y)-(dPdV.x*dPdU.y);
+	if(fabsf(detXY) > 1.0e-6f)
+	{
+		dU = ((dP.x*dPdV.y)-(dPdV.x*dP.y)) / detXY;
+		dV = ((dPdU.x*dP.y)-(dP.x*dPdU.y)) / detXY;
+	}
+	else
+	{
+		float detXZ = (dPdU.x*dPdV.z)-(dPdV.x*dPdU.z);
+		if(fabsf(detXZ) > 1.0e-6f)
+		{
+			dU = ((dP.x*dPdV.z)-(dPdV.x*dP.z)) / detXZ;
+			dV = ((dPdU.x*dP.z)-(dP.x*dPdU.z)) / detXZ;
+		}
+		else
+		{
+			float detYZ = (dPdU.y*dPdV.z)-(dPdV.y*dPdU.z);
+			if(fabsf(detYZ) > 1.0e-6f)
+			{
+				dU = ((dP.y*dPdV.z)-(dPdV.y*dP.z)) / detYZ;
+				dV = ((dPdU.y*dP.z)-(dP.y*dPdU.z)) / detYZ;
+			}
+		}
+	}
+}
+
+void spDifferentials_t::getUVdifferentials(float &dUdx, float &dVdx, float &dUdy, float &dVdy) const
+{
+	dU_dV_from_dP_dPdU_dPdV(dUdx, dVdx, dPdx, sp.dPdU_abs, sp.dPdV_abs);
+	dU_dV_from_dP_dPdU_dPdV(dUdy, dVdy, dPdy, sp.dPdU_abs, sp.dPdV_abs);
+}
+
+
 surfacePoint_t blend_surface_points(surfacePoint_t const& sp_0, surfacePoint_t const& sp_1, float const alpha)
 {
     surfacePoint_t sp_result(sp_0);
